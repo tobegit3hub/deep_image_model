@@ -105,7 +105,7 @@ def main():
   # Define the model
   x = tf.placeholder(tf.float32,
                      shape=(None, IMAGE_SIZE, IMAGE_SIZE, RGB_CHANNEL_SIZE))
-  y = tf.placeholder(tf.int32, shape=(None,))
+  y = tf.placeholder(tf.int32, shape=(None, ))
 
   batch_size = FLAGS.batch_size
   epoch_number = FLAGS.epoch_number
@@ -136,7 +136,7 @@ def main():
                              ksize=[1, 2, 2, 1],
                              strides=[1, 2, 2, 1],
                              padding="SAME")
-    
+
     # Convolution layer result: [BATCH_SIZE, 8, 8, 64]
     with tf.variable_scope("conv2"):
       weights = tf.get_variable("weights",
@@ -146,14 +146,16 @@ def main():
                              [64],
                              initializer=tf.random_normal_initializer())
 
-      layer = tf.nn.conv2d(layer, weights, strides=[1, 1, 1, 1], padding="SAME")
+      layer = tf.nn.conv2d(layer,
+                           weights,
+                           strides=[1, 1, 1, 1],
+                           padding="SAME")
       layer = tf.nn.bias_add(layer, bias)
       layer = tf.nn.relu(layer)
       layer = tf.nn.max_pool(layer,
                              ksize=[1, 2, 2, 1],
                              strides=[1, 2, 2, 1],
                              padding="SAME")
-    
 
     # Reshape for full-connect network
     layer = tf.reshape(layer, [-1, 8 * 8 * 64])
@@ -233,7 +235,7 @@ def main():
 
         if epoch % steps_to_validate == 0:
           end_time = datetime.datetime.now()
-          
+
           accuracy_value, summary_value = sess.run(
               [accuracy_op, summary_op],
               feed_dict={x: test_dataset,
