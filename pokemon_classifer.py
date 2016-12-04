@@ -27,7 +27,7 @@ flags.DEFINE_string("image", "./data/inference/Pikachu.png",
                     "The image to inference")
 flags.DEFINE_string(
     "model", "cnn",
-    "Model to train, option model: cnn, lstm, bidirectional_lstm")
+    "Model to train, option model: cnn, lstm, bidirectional_lstm, stacked_lstm")
 
 
 def main():
@@ -223,6 +223,29 @@ def main():
     # outputs[-1] is [BATCH_SIZE, 128]
     return tf.matmul(outputs[-1], weights) + biases
 
+  def stacked_lstm_inference(x):
+    RNN_HIDDEN_UNITS = 128
+
+    # x was [BATCH_SIZE, 32, 32, 3]
+    # x changes to [32, BATCH_SIZE, 32, 3]
+    x = tf.transpose(x, [1, 0, 2, 3])
+    # x changes to [32 * BATCH_SIZE, 32 * 3]
+    x = tf.reshape(x, [-1, IMAGE_SIZE * RGB_CHANNEL_SIZE])
+    # x changes to array of 32 * [BATCH_SIZE, 32 * 3]
+    x = tf.split(0, IMAGE_SIZE, x)
+
+    weights = tf.Variable(tf.random_normal([RNN_HIDDEN_UNITS, LABEL_SIZE]))
+    biases = tf.Variable(tf.random_normal([LABEL_SIZE]))
+
+    # output size is 128, state size is (c=128, h=128)
+    lstm_cell = rnn_cell.BasicLSTMCell(RNN_HIDDEN_UNITS, forget_bias=1.0)
+    lstm_cells = tf.nn.rnn_cell.MultiRNNCell([lstm_cell] * 2)
+    # outputs is array of 32 * [BATCH_SIZE, 128]
+    outputs, states = rnn.rnn(lstm_cells, x, dtype=tf.float32)
+
+    # outputs[-1] is [BATCH_SIZE, 128]
+    return tf.matmul(outputs[-1], weights) + biases
+
   def inference(inputs):
     print("Use the model: {}".format(FLAGS.model))
     if FLAGS.model == "cnn":
@@ -231,6 +254,8 @@ def main():
       return lstm_inference(inputs)
     elif FLAGS.model == "bidirectional_lstm":
       return bidirectional_lstm_inference(inputs)
+    elif FLAGS.model == "stacked_lstm":
+      return stacked_lstm_inference(inputs)
     else:
       print("Unknow model, exit now")
       exit(1)
