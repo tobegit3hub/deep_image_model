@@ -25,7 +25,9 @@ flags.DEFINE_integer('steps_to_validate', 1,
 flags.DEFINE_string("mode", "train", "Opetion mode: train, inference")
 flags.DEFINE_string("image", "./data/inference/Pikachu.png",
                     "The image to inference")
-flags.DEFINE_string("model", "cnn", "Model to train, option model: cnn, lstm")
+flags.DEFINE_string(
+    "model", "cnn",
+    "Model to train, option model: cnn, lstm, bidirectional_lstm")
 
 
 def main():
@@ -114,8 +116,6 @@ def main():
   if not os.path.exists(checkpoint_dir):
     os.makedirs(checkpoint_dir)
   tensorboard_dir = FLAGS.tensorboard_dir
-  if not os.path.exists(tensorboard_dir):
-    os.makedirs(tensorboard_dir)
   mode = FLAGS.mode
   checkpoint_file = checkpoint_dir + "/checkpoint.ckpt"
   steps_to_validate = FLAGS.steps_to_validate
@@ -197,12 +197,40 @@ def main():
     # outputs[-1] is [BATCH_SIZE, 128]
     return tf.matmul(outputs[-1], weights) + biases
 
+  def bidirectional_lstm_inference(x):
+    RNN_HIDDEN_UNITS = 128
+
+    # x was [BATCH_SIZE, 32, 32, 3]
+    # x changes to [32, BATCH_SIZE, 32, 3]
+    x = tf.transpose(x, [1, 0, 2, 3])
+    # x changes to [32 * BATCH_SIZE, 32 * 3]
+    x = tf.reshape(x, [-1, IMAGE_SIZE * RGB_CHANNEL_SIZE])
+    # x changes to array of 32 * [BATCH_SIZE, 32 * 3]
+    x = tf.split(0, IMAGE_SIZE, x)
+
+    weights = tf.Variable(tf.random_normal([2 * RNN_HIDDEN_UNITS, LABEL_SIZE]))
+    biases = tf.Variable(tf.random_normal([LABEL_SIZE]))
+
+    # output size is 128, state size is (c=128, h=128)
+    fw_lstm_cell = rnn_cell.BasicLSTMCell(RNN_HIDDEN_UNITS, forget_bias=1.0)
+    bw_lstm_cell = rnn_cell.BasicLSTMCell(RNN_HIDDEN_UNITS, forget_bias=1.0)
+    # outputs is array of 32 * [BATCH_SIZE, 128]
+    outputs, _, _ = rnn.bidirectional_rnn(fw_lstm_cell,
+                                          bw_lstm_cell,
+                                          x,
+                                          dtype=tf.float32)
+
+    # outputs[-1] is [BATCH_SIZE, 128]
+    return tf.matmul(outputs[-1], weights) + biases
+
   def inference(inputs):
     print("Use the model: {}".format(FLAGS.model))
     if FLAGS.model == "cnn":
       return cnn_inference(inputs)
     elif FLAGS.model == "lstm":
       return lstm_inference(inputs)
+    elif FLAGS.model == "bidirectional_lstm":
+      return bidirectional_lstm_inference(inputs)
     else:
       print("Unknow model, exit now")
       exit(1)
