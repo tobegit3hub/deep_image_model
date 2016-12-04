@@ -19,14 +19,13 @@ flags.DEFINE_string("checkpoint_dir", "./checkpoint/",
                     "indicates the checkpoint dirctory")
 flags.DEFINE_string("tensorboard_dir", "./tensorboard/",
                     "indicates training output")
-flags.DEFINE_string("optimizer", "adagrad", "optimizer to train")
+flags.DEFINE_string("optimizer", "adam", "optimizer to train")
 flags.DEFINE_integer('steps_to_validate', 1,
                      'Steps to validate and print loss')
 flags.DEFINE_string("mode", "train", "Opetion mode: train, inference")
 flags.DEFINE_string("image", "./data/inference/Pikachu.png",
                     "The image to inference")
-flags.DEFINE_string("model", "cnn",
-                    "Model to train, option model: cnn, lstm")
+flags.DEFINE_string("model", "cnn", "Model to train, option model: cnn, lstm")
 
 
 def main():
@@ -190,12 +189,13 @@ def main():
     weights = tf.Variable(tf.random_normal([RNN_HIDDEN_UNITS, LABEL_SIZE]))
     biases = tf.Variable(tf.random_normal([LABEL_SIZE]))
 
+    # output size is 128, state size is (c=128, h=128)
     lstm_cell = rnn_cell.BasicLSTMCell(RNN_HIDDEN_UNITS, forget_bias=1.0)
-    # outputs is array of 32 * [None, 128]
+    # outputs is array of 32 * [BATCH_SIZE, 128]
     outputs, states = rnn.rnn(lstm_cell, x, dtype=tf.float32)
 
+    # outputs[-1] is [BATCH_SIZE, 128]
     return tf.matmul(outputs[-1], weights) + biases
-
 
   def inference(inputs):
     print("Use the model: {}".format(FLAGS.model))
@@ -269,13 +269,18 @@ def main():
         if epoch % steps_to_validate == 0:
           end_time = datetime.datetime.now()
 
-          accuracy_value, summary_value = sess.run(
+          train_accuracy_value, summary_value = sess.run(
               [accuracy_op, summary_op],
-              feed_dict={x: test_dataset,
-                         y: test_labels})
+              feed_dict={x: train_dataset,
+                         y: train_labels})
+          test_accuracy_value = sess.run(accuracy_op,
+                                         feed_dict={x: test_dataset,
+                                                    y: test_labels})
 
-          print("[{}] Epoch: {}, loss: {}, accuracy: {}".format(
-              end_time - start_time, epoch, loss_value, accuracy_value))
+          print(
+              "[{}] Epoch: {}, loss: {}, train_accuracy: {}, test_accuracy: {}".format(
+                  end_time - start_time, epoch, loss_value,
+                  train_accuracy_value, test_accuracy_value))
 
           saver.save(sess, checkpoint_file, global_step=step)
           writer.add_summary(summary_value, step)
