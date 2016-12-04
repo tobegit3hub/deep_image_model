@@ -6,6 +6,7 @@ import numpy as np
 import os
 from scipy import ndimage
 import tensorflow as tf
+from tensorflow.python.ops import rnn, rnn_cell
 
 # Define parameters
 flags = tf.app.flags
@@ -24,6 +25,8 @@ flags.DEFINE_integer('steps_to_validate', 1,
 flags.DEFINE_string("mode", "train", "Opetion mode: train, inference")
 flags.DEFINE_string("image", "./data/inference/Pikachu.png",
                     "The image to inference")
+flags.DEFINE_string("model", "cnn",
+                    "Model to train, option model: cnn, lstm")
 
 
 def main():
@@ -73,7 +76,6 @@ def main():
                    "Poison", "Psychic", "Rock", "Steel", "Water"]
 
   # Load train images
-  #import ipdb;ipdb.set_trace()
   for pokemon_type in os.listdir(TRAIN_DATA_DIR):
     for image_filename in os.listdir(os.path.join(TRAIN_DATA_DIR,
                                                   pokemon_type)):
@@ -119,7 +121,7 @@ def main():
   checkpoint_file = checkpoint_dir + "/checkpoint.ckpt"
   steps_to_validate = FLAGS.steps_to_validate
 
-  def inference():
+  def cnn_inference(x):
     # Convolution layer result: [BATCH_SIZE, 16, 16, 64]
     with tf.variable_scope("conv1"):
       weights = tf.get_variable("weights",
@@ -174,8 +176,39 @@ def main():
 
     return layer
 
+  def lstm_inference(x):
+    RNN_HIDDEN_UNITS = 128
+
+    # x was [BATCH_SIZE, 32, 32, 3]
+    # x changes to [32, BATCH_SIZE, 32, 3]
+    x = tf.transpose(x, [1, 0, 2, 3])
+    # x changes to [32 * BATCH_SIZE, 32 * 3]
+    x = tf.reshape(x, [-1, IMAGE_SIZE * RGB_CHANNEL_SIZE])
+    # x changes to array of 32 * [BATCH_SIZE, 32 * 3]
+    x = tf.split(0, IMAGE_SIZE, x)
+
+    weights = tf.Variable(tf.random_normal([RNN_HIDDEN_UNITS, LABEL_SIZE]))
+    biases = tf.Variable(tf.random_normal([LABEL_SIZE]))
+
+    lstm_cell = rnn_cell.BasicLSTMCell(RNN_HIDDEN_UNITS, forget_bias=1.0)
+    # outputs is array of 32 * [None, 128]
+    outputs, states = rnn.rnn(lstm_cell, x, dtype=tf.float32)
+
+    return tf.matmul(outputs[-1], weights) + biases
+
+
+  def inference(inputs):
+    print("Use the model: {}".format(FLAGS.model))
+    if FLAGS.model == "cnn":
+      return cnn_inference(inputs)
+    elif FLAGS.model == "lstm":
+      return lstm_inference(inputs)
+    else:
+      print("Unknow model, exit now")
+      exit(1)
+
   # Define train op
-  logit = inference()
+  logit = inference(x)
   loss = tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(logit,
                                                                        y))
 
@@ -202,7 +235,7 @@ def main():
 
   # Define accuracy and inference op
   tf.get_variable_scope().reuse_variables()
-  logits = inference()
+  logits = inference(x)
   validate_softmax = tf.nn.softmax(logits)
   predict_op = tf.argmax(validate_softmax, 1)
   correct_prediction = tf.equal(predict_op, tf.to_int64(y))
@@ -225,8 +258,8 @@ def main():
             ckpt.model_checkpoint_path))
         saver.restore(sess, ckpt.model_checkpoint_path)
 
+      start_time = datetime.datetime.now()
       for epoch in range(epoch_number):
-        start_time = datetime.datetime.now()
 
         _, loss_value, step = sess.run(
             [train_op, loss, global_step],
@@ -246,6 +279,7 @@ def main():
 
           saver.save(sess, checkpoint_file, global_step=step)
           writer.add_summary(summary_value, step)
+          start_time = end_time
 
     elif mode == "inference":
       ckpt = tf.train.get_checkpoint_state(checkpoint_dir)
