@@ -1,11 +1,12 @@
-# Deep CNN
+# Deep CNN and RNN
 
-The classic deep convolution neural network project with TensorFlow. You can learn and run CNN easily.
+The classic deep convolution and recurrent neural network project with TensorFlow. You can learn and run CNN easily.
 
 * Train/test/inference images included.
 * Visualize images with `matplotlib`.
 * Support checkpoint and `tensorboard`.
 * Easy to extend more convolution layers.
+* Support CNN, LSTM, Bicondictional LSTM and Stacked LSTM.
 
 ## Train
 
