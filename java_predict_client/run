@@ -1,0 +1,8 @@
+#!/bin/bash 
+
+set -x 
+set -e
+
+mvn compile exec:java -Dexec.mainClass="com.tobe.PredictClient" -Dexec.args="127.0.0.1 9000 deep_cnn 1"
+
+mvn compile exec:java -Dexec.mainClass="com.tobe.InceptionPredictClient" -Dexec.args="10.132.13.15 30721 inception -1"

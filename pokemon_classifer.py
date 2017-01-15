@@ -1,11 +1,11 @@
 #!/usr/bin/env python
 
 import datetime
-import matplotlib.pyplot as plt
 import numpy as np
 import os
 from scipy import ndimage
 import tensorflow as tf
+from tensorflow.contrib.session_bundle import exporter
 from tensorflow.python.ops import rnn, rnn_cell
 
 # Define parameters
@@ -28,6 +28,8 @@ flags.DEFINE_string("image", "./data/inference/Pikachu.png",
 flags.DEFINE_string(
     "model", "cnn",
     "Model to train, option model: cnn, lstm, bidirectional_lstm, stacked_lstm")
+flags.DEFINE_string("model_path", "./model", "The path to export the model")
+flags.DEFINE_integer("export_version", 1, "Version number of the model")
 
 
 def main():
@@ -106,6 +108,9 @@ def main():
         index += 1
 
   # Define the model
+  keys_placeholder = tf.placeholder(tf.int32, shape=[None, 1])
+  keys = tf.identity(keys_placeholder)
+
   x = tf.placeholder(tf.float32,
                      shape=(None, IMAGE_SIZE, IMAGE_SIZE, RGB_CHANNEL_SIZE))
   y = tf.placeholder(tf.int32, shape=(None, ))
@@ -123,11 +128,9 @@ def main():
   def cnn_inference(x):
     # Convolution layer result: [BATCH_SIZE, 16, 16, 64]
     with tf.variable_scope("conv1"):
-      weights = tf.get_variable("weights",
-                                [3, 3, 3, 32],
+      weights = tf.get_variable("weights", [3, 3, 3, 32],
                                 initializer=tf.random_normal_initializer())
-      bias = tf.get_variable("bias",
-                             [32],
+      bias = tf.get_variable("bias", [32],
                              initializer=tf.random_normal_initializer())
 
       layer = tf.nn.conv2d(x, weights, strides=[1, 1, 1, 1], padding="SAME")
@@ -140,11 +143,9 @@ def main():
 
     # Convolution layer result: [BATCH_SIZE, 8, 8, 64]
     with tf.variable_scope("conv2"):
-      weights = tf.get_variable("weights",
-                                [3, 3, 32, 64],
+      weights = tf.get_variable("weights", [3, 3, 32, 64],
                                 initializer=tf.random_normal_initializer())
-      bias = tf.get_variable("bias",
-                             [64],
+      bias = tf.get_variable("bias", [64],
                              initializer=tf.random_normal_initializer())
 
       layer = tf.nn.conv2d(layer,
@@ -165,11 +166,9 @@ def main():
     # Full connected layer result: [BATCH_SIZE, 17]
     with tf.variable_scope("fc1"):
       # weights.get_shape().as_list()[0]] = 8 * 8 * 64
-      weights = tf.get_variable("weights",
-                                [8 * 8 * 64, LABEL_SIZE],
+      weights = tf.get_variable("weights", [8 * 8 * 64, LABEL_SIZE],
                                 initializer=tf.random_normal_initializer())
-      bias = tf.get_variable("bias",
-                             [LABEL_SIZE],
+      bias = tf.get_variable("bias", [LABEL_SIZE],
                              initializer=tf.random_normal_initializer())
       layer = tf.add(tf.matmul(layer, weights), bias)
 
@@ -314,10 +313,9 @@ def main():
       start_time = datetime.datetime.now()
       for epoch in range(epoch_number):
 
-        _, loss_value, step = sess.run(
-            [train_op, loss, global_step],
-            feed_dict={x: train_dataset,
-                       y: train_labels})
+        _, loss_value, step = sess.run([train_op, loss, global_step],
+                                       feed_dict={x: train_dataset,
+                                                  y: train_labels})
 
         if epoch % steps_to_validate == 0:
           end_time = datetime.datetime.now()
@@ -339,6 +337,21 @@ def main():
           writer.add_summary(summary_value, step)
           start_time = end_time
 
+      # Export the model
+      print("Exporting trained model to {}".format(FLAGS.model_path))
+      model_exporter = exporter.Exporter(saver)
+      model_exporter.init(
+          sess.graph.as_graph_def(),
+          named_graph_signatures={
+              'inputs': exporter.generic_signature({"keys": keys_placeholder,
+                                                    "features": x}),
+              'outputs': exporter.generic_signature({"keys": keys,
+                                                     "prediction": predict_op})
+          })
+      model_exporter.export(FLAGS.model_path,
+                            tf.constant(FLAGS.export_version), sess)
+      print 'Done exporting!'
+
     elif mode == "inference":
       ckpt = tf.train.get_checkpoint_state(checkpoint_dir)
       if ckpt and ckpt.model_checkpoint_path:
@@ -348,7 +361,8 @@ def main():
       start_time = datetime.datetime.now()
 
       image_ndarray = ndimage.imread(FLAGS.image, mode="RGB")
-      print_image(image_ndarray)
+      # TODO: Update for server without gui
+      #print_image(image_ndarray)
 
       image_ndarray = image_ndarray.reshape(1, IMAGE_SIZE, IMAGE_SIZE,
                                             RGB_CHANNEL_SIZE)
@@ -366,6 +380,7 @@ def main():
 
 
 def print_image(image_ndarray):
+  import matplotlib.pyplot as plt
   plt.imshow(image_ndarray)
   plt.show()
 
