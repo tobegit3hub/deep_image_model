@@ -114,6 +114,8 @@ public class InceptionPredictClient {
         Predict.PredictResponse response;
         try {
             response = blockingStub.predict(request);
+            // Refer to https://github.com/thammegowda/tensorflow-grpc-java/blob/master/src/main/java/edu/usc/irds/tensorflow/grpc/TensorflowObjectRecogniser.java
+
             java.util.Map<java.lang.String, org.tensorflow.framework.TensorProto> outputs = response.getOutputs();
             for (java.util.Map.Entry<java.lang.String, org.tensorflow.framework.TensorProto> entry : outputs.entrySet()) {
                 System.out.println("Response with the key: " + entry.getKey() + ", value: " + entry.getValue());
