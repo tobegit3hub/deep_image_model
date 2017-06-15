@@ -6,7 +6,7 @@ import os
 from scipy import ndimage
 import tensorflow as tf
 from tensorflow.contrib.session_bundle import exporter
-from tensorflow.python.ops import rnn, rnn_cell
+from tensorflow.contrib import rnn
 
 # Define parameters
 flags = tf.app.flags
@@ -27,7 +27,8 @@ flags.DEFINE_string("image", "./data/inference/Pikachu.png",
                     "The image to inference")
 flags.DEFINE_string(
     "model", "cnn",
-    "Model to train, option model: cnn, lstm, bidirectional_lstm, stacked_lstm")
+    "Model to train, option model: cnn, lstm, bidirectional_lstm, stacked_lstm"
+)
 flags.DEFINE_string("model_path", "./model", "The path to export the model")
 flags.DEFINE_integer("export_version", 1, "Version number of the model")
 
@@ -57,31 +58,35 @@ def main():
   VALIDATE_DATA_DIR = "./data/validate/"
   IMAGE_FORMAT = ".png"
   index = 0
-  pokemon_type_id_map = {"Bug": 0,
-                         "Dark": 1,
-                         "Dragon": 2,
-                         "Electric": 3,
-                         "Fairy": 4,
-                         "Fighting": 5,
-                         "Fire": 6,
-                         "Ghost": 7,
-                         "Grass": 8,
-                         "Ground": 9,
-                         "Ice": 10,
-                         "Normal": 11,
-                         "Poison": 12,
-                         "Psychic": 13,
-                         "Rock": 14,
-                         "Steel": 15,
-                         "Water": 16}
-  pokemon_types = ["Bug", "Dark", "Dragon", "Electric", "Fairy", "Fighting",
-                   "Fire", "Ghost", "Grass", "Ground", "Ice", "Normal",
-                   "Poison", "Psychic", "Rock", "Steel", "Water"]
+  pokemon_type_id_map = {
+      "Bug": 0,
+      "Dark": 1,
+      "Dragon": 2,
+      "Electric": 3,
+      "Fairy": 4,
+      "Fighting": 5,
+      "Fire": 6,
+      "Ghost": 7,
+      "Grass": 8,
+      "Ground": 9,
+      "Ice": 10,
+      "Normal": 11,
+      "Poison": 12,
+      "Psychic": 13,
+      "Rock": 14,
+      "Steel": 15,
+      "Water": 16
+  }
+  pokemon_types = [
+      "Bug", "Dark", "Dragon", "Electric", "Fairy", "Fighting", "Fire",
+      "Ghost", "Grass", "Ground", "Ice", "Normal", "Poison", "Psychic", "Rock",
+      "Steel", "Water"
+  ]
 
   # Load train images
   for pokemon_type in os.listdir(TRAIN_DATA_DIR):
-    for image_filename in os.listdir(os.path.join(TRAIN_DATA_DIR,
-                                                  pokemon_type)):
+    for image_filename in os.listdir(
+        os.path.join(TRAIN_DATA_DIR, pokemon_type)):
       if image_filename.endswith(IMAGE_FORMAT):
 
         image_filepath = os.path.join(TRAIN_DATA_DIR, pokemon_type,
@@ -95,8 +100,8 @@ def main():
   index = 0
   # Load test image
   for pokemon_type in os.listdir(TEST_DATA_DIR):
-    for image_filename in os.listdir(os.path.join(TEST_DATA_DIR,
-                                                  pokemon_type)):
+    for image_filename in os.listdir(
+        os.path.join(TEST_DATA_DIR, pokemon_type)):
       if image_filename.endswith(IMAGE_FORMAT):
 
         image_filepath = os.path.join(TEST_DATA_DIR, pokemon_type,
@@ -111,8 +116,8 @@ def main():
   keys_placeholder = tf.placeholder(tf.int32, shape=[None, 1])
   keys = tf.identity(keys_placeholder)
 
-  x = tf.placeholder(tf.float32,
-                     shape=(None, IMAGE_SIZE, IMAGE_SIZE, RGB_CHANNEL_SIZE))
+  x = tf.placeholder(
+      tf.float32, shape=(None, IMAGE_SIZE, IMAGE_SIZE, RGB_CHANNEL_SIZE))
   y = tf.placeholder(tf.int32, shape=(None, ))
 
   batch_size = FLAGS.batch_size
@@ -128,48 +133,43 @@ def main():
   def cnn_inference(x):
     # Convolution layer result: [BATCH_SIZE, 16, 16, 64]
     with tf.variable_scope("conv1"):
-      weights = tf.get_variable("weights", [3, 3, 3, 32],
-                                initializer=tf.random_normal_initializer())
-      bias = tf.get_variable("bias", [32],
-                             initializer=tf.random_normal_initializer())
+      weights = tf.get_variable(
+          "weights", [3, 3, 3, 32], initializer=tf.random_normal_initializer())
+      bias = tf.get_variable(
+          "bias", [32], initializer=tf.random_normal_initializer())
 
       layer = tf.nn.conv2d(x, weights, strides=[1, 1, 1, 1], padding="SAME")
       layer = tf.nn.bias_add(layer, bias)
       layer = tf.nn.relu(layer)
-      layer = tf.nn.max_pool(layer,
-                             ksize=[1, 2, 2, 1],
-                             strides=[1, 2, 2, 1],
-                             padding="SAME")
+      layer = tf.nn.max_pool(
+          layer, ksize=[1, 2, 2, 1], strides=[1, 2, 2, 1], padding="SAME")
 
     # Convolution layer result: [BATCH_SIZE, 8, 8, 64]
     with tf.variable_scope("conv2"):
-      weights = tf.get_variable("weights", [3, 3, 32, 64],
-                                initializer=tf.random_normal_initializer())
-      bias = tf.get_variable("bias", [64],
-                             initializer=tf.random_normal_initializer())
+      weights = tf.get_variable(
+          "weights", [3, 3, 32, 64],
+          initializer=tf.random_normal_initializer())
+      bias = tf.get_variable(
+          "bias", [64], initializer=tf.random_normal_initializer())
 
-      layer = tf.nn.conv2d(layer,
-                           weights,
-                           strides=[1, 1, 1, 1],
-                           padding="SAME")
+      layer = tf.nn.conv2d(
+          layer, weights, strides=[1, 1, 1, 1], padding="SAME")
       layer = tf.nn.bias_add(layer, bias)
       layer = tf.nn.relu(layer)
-      layer = tf.nn.max_pool(layer,
-                             ksize=[1, 2, 2, 1],
-                             strides=[1, 2, 2, 1],
-                             padding="SAME")
+      layer = tf.nn.max_pool(
+          layer, ksize=[1, 2, 2, 1], strides=[1, 2, 2, 1], padding="SAME")
 
     # Reshape for full-connect network
     layer = tf.reshape(layer, [-1, 8 * 8 * 64])
-    #import ipdb;ipdb.set_trace()
 
     # Full connected layer result: [BATCH_SIZE, 17]
     with tf.variable_scope("fc1"):
       # weights.get_shape().as_list()[0]] = 8 * 8 * 64
-      weights = tf.get_variable("weights", [8 * 8 * 64, LABEL_SIZE],
-                                initializer=tf.random_normal_initializer())
-      bias = tf.get_variable("bias", [LABEL_SIZE],
-                             initializer=tf.random_normal_initializer())
+      weights = tf.get_variable(
+          "weights", [8 * 8 * 64, LABEL_SIZE],
+          initializer=tf.random_normal_initializer())
+      bias = tf.get_variable(
+          "bias", [LABEL_SIZE], initializer=tf.random_normal_initializer())
       layer = tf.add(tf.matmul(layer, weights), bias)
 
     return layer
@@ -183,13 +183,13 @@ def main():
     # x changes to [32 * BATCH_SIZE, 32 * 3]
     x = tf.reshape(x, [-1, IMAGE_SIZE * RGB_CHANNEL_SIZE])
     # x changes to array of 32 * [BATCH_SIZE, 32 * 3]
-    x = tf.split(0, IMAGE_SIZE, x)
+    x = tf.split(axis=0, num_or_size_splits=IMAGE_SIZE, value=x)
 
     weights = tf.Variable(tf.random_normal([RNN_HIDDEN_UNITS, LABEL_SIZE]))
     biases = tf.Variable(tf.random_normal([LABEL_SIZE]))
 
     # output size is 128, state size is (c=128, h=128)
-    lstm_cell = rnn_cell.BasicLSTMCell(RNN_HIDDEN_UNITS, forget_bias=1.0)
+    lstm_cell = rnn.BasicLSTMCell(RNN_HIDDEN_UNITS, forget_bias=1.0)
     # outputs is array of 32 * [BATCH_SIZE, 128]
     outputs, states = rnn.rnn(lstm_cell, x, dtype=tf.float32)
 
@@ -205,19 +205,18 @@ def main():
     # x changes to [32 * BATCH_SIZE, 32 * 3]
     x = tf.reshape(x, [-1, IMAGE_SIZE * RGB_CHANNEL_SIZE])
     # x changes to array of 32 * [BATCH_SIZE, 32 * 3]
-    x = tf.split(0, IMAGE_SIZE, x)
+    x = tf.split(axis=0, num_or_size_splits=IMAGE_SIZE, value=x)
 
     weights = tf.Variable(tf.random_normal([2 * RNN_HIDDEN_UNITS, LABEL_SIZE]))
     biases = tf.Variable(tf.random_normal([LABEL_SIZE]))
 
     # output size is 128, state size is (c=128, h=128)
-    fw_lstm_cell = rnn_cell.BasicLSTMCell(RNN_HIDDEN_UNITS, forget_bias=1.0)
-    bw_lstm_cell = rnn_cell.BasicLSTMCell(RNN_HIDDEN_UNITS, forget_bias=1.0)
+    fw_lstm_cell = rnn.BasicLSTMCell(RNN_HIDDEN_UNITS, forget_bias=1.0)
+    bw_lstm_cell = rnn.BasicLSTMCell(RNN_HIDDEN_UNITS, forget_bias=1.0)
+
     # outputs is array of 32 * [BATCH_SIZE, 128]
-    outputs, _, _ = rnn.bidirectional_rnn(fw_lstm_cell,
-                                          bw_lstm_cell,
-                                          x,
-                                          dtype=tf.float32)
+    outputs, _, _ = rnn.bidirectional_rnn(
+        fw_lstm_cell, bw_lstm_cell, x, dtype=tf.float32)
 
     # outputs[-1] is [BATCH_SIZE, 128]
     return tf.matmul(outputs[-1], weights) + biases
@@ -231,14 +230,15 @@ def main():
     # x changes to [32 * BATCH_SIZE, 32 * 3]
     x = tf.reshape(x, [-1, IMAGE_SIZE * RGB_CHANNEL_SIZE])
     # x changes to array of 32 * [BATCH_SIZE, 32 * 3]
-    x = tf.split(0, IMAGE_SIZE, x)
+    x = tf.split(axis=0, num_or_size_splits=IMAGE_SIZE, value=x)
 
     weights = tf.Variable(tf.random_normal([RNN_HIDDEN_UNITS, LABEL_SIZE]))
     biases = tf.Variable(tf.random_normal([LABEL_SIZE]))
 
     # output size is 128, state size is (c=128, h=128)
-    lstm_cell = rnn_cell.BasicLSTMCell(RNN_HIDDEN_UNITS, forget_bias=1.0)
-    lstm_cells = tf.nn.rnn_cell.MultiRNNCell([lstm_cell] * 2)
+    lstm_cell = rnn.BasicLSTMCell(RNN_HIDDEN_UNITS, forget_bias=1.0)
+    lstm_cells = rnn.MultiRNNCell([lstm_cell] * 2)
+
     # outputs is array of 32 * [BATCH_SIZE, 128]
     outputs, states = rnn.rnn(lstm_cells, x, dtype=tf.float32)
 
@@ -261,8 +261,8 @@ def main():
 
   # Define train op
   logit = inference(x)
-  loss = tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(logit,
-                                                                       y))
+  loss = tf.reduce_mean(
+      tf.nn.sparse_softmax_cross_entropy_with_logits(logits=logit, labels=y))
 
   learning_rate = FLAGS.learning_rate
   print("Use the optimizer: {}".format(FLAGS.optimizer))
@@ -294,13 +294,13 @@ def main():
   accuracy_op = tf.reduce_mean(tf.cast(correct_prediction, tf.float32))
 
   saver = tf.train.Saver()
-  tf.scalar_summary('loss', loss)
-  init_op = tf.initialize_all_variables()
+  tf.summary.scalar('loss', loss)
+  init_op = tf.global_variables_initializer()
 
   # Create session to run graph
   with tf.Session() as sess:
-    summary_op = tf.merge_all_summaries()
-    writer = tf.train.SummaryWriter(tensorboard_dir, sess.graph)
+    summary_op = tf.summary.merge_all()
+    writer = tf.summary.FileWriter(tensorboard_dir, sess.graph)
     sess.run(init_op)
 
     if mode == "train":
@@ -313,9 +313,10 @@ def main():
       start_time = datetime.datetime.now()
       for epoch in range(epoch_number):
 
-        _, loss_value, step = sess.run([train_op, loss, global_step],
-                                       feed_dict={x: train_dataset,
-                                                  y: train_labels})
+        _, loss_value, step = sess.run(
+            [train_op, loss, global_step],
+            feed_dict={x: train_dataset,
+                       y: train_labels})
 
         if epoch % steps_to_validate == 0:
           end_time = datetime.datetime.now()
@@ -324,14 +325,14 @@ def main():
               [accuracy_op, summary_op],
               feed_dict={x: train_dataset,
                          y: train_labels})
-          test_accuracy_value = sess.run(accuracy_op,
-                                         feed_dict={x: test_dataset,
-                                                    y: test_labels})
+          test_accuracy_value = sess.run(
+              accuracy_op, feed_dict={x: test_dataset,
+                                      y: test_labels})
 
           print(
-              "[{}] Epoch: {}, loss: {}, train_accuracy: {}, test_accuracy: {}".format(
-                  end_time - start_time, epoch, loss_value,
-                  train_accuracy_value, test_accuracy_value))
+              "[{}] Epoch: {}, loss: {}, train_accuracy: {}, test_accuracy: {}".
+              format(end_time - start_time, epoch, loss_value,
+                     train_accuracy_value, test_accuracy_value))
 
           saver.save(sess, checkpoint_file, global_step=step)
           writer.add_summary(summary_value, step)
@@ -343,10 +344,16 @@ def main():
       model_exporter.init(
           sess.graph.as_graph_def(),
           named_graph_signatures={
-              'inputs': exporter.generic_signature({"keys": keys_placeholder,
-                                                    "features": x}),
-              'outputs': exporter.generic_signature({"keys": keys,
-                                                     "prediction": predict_op})
+              'inputs':
+              exporter.generic_signature({
+                  "keys": keys_placeholder,
+                  "features": x
+              }),
+              'outputs':
+              exporter.generic_signature({
+                  "keys": keys,
+                  "prediction": predict_op
+              })
           })
       model_exporter.export(FLAGS.model_path,
                             tf.constant(FLAGS.export_version), sess)
