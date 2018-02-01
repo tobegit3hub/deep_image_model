@@ -1,12 +1,18 @@
 #!/usr/bin/env python
 
 import datetime
-import numpy as np
+import logging
 import os
-from scipy import ndimage
+
+import numpy as np
 import tensorflow as tf
-from tensorflow.contrib.session_bundle import exporter
+from scipy import ndimage
+#from tensorflow.contrib.session_bundle import exporter
 from tensorflow.contrib import rnn
+from tensorflow.python.saved_model import builder as saved_model_builder
+from tensorflow.python.saved_model import (
+    signature_constants, signature_def_utils, tag_constants, utils)
+from tensorflow.python.util import compat
 
 # Define parameters
 flags = tf.app.flags
@@ -22,19 +28,28 @@ flags.DEFINE_string("tensorboard_dir", "./tensorboard/",
 flags.DEFINE_string("optimizer", "adam", "optimizer to train")
 flags.DEFINE_integer('steps_to_validate', 1,
                      'Steps to validate and print loss')
-flags.DEFINE_string("mode", "train", "Opetion mode: train, inference")
+flags.DEFINE_string("mode", "train",
+                    "Option mode: train, inference, savedmodel")
 flags.DEFINE_string("image", "./data/inference/Pikachu.png",
                     "The image to inference")
+flags.DEFINE_string("checkpoint_path", "./checkpoint/", "Path for checkpoint")
 flags.DEFINE_string(
     "model", "cnn",
     "Model to train, option model: cnn, lstm, bidirectional_lstm, stacked_lstm"
 )
-flags.DEFINE_string("model_path", "./model", "The path to export the model")
-flags.DEFINE_integer("export_version", 1, "Version number of the model")
+#flags.DEFINE_string("model_path", "./model", "The path to export the model")
+#flags.DEFINE_integer("export_version", 1, "Version number of the model")
+flags.DEFINE_string("model_path", "./model/", "Path of the model")
+flags.DEFINE_integer("model_version", 1, "Version of the model")
 
 
 def main():
+  # Get hyper-parameters
   print("Start Pokemon classifier")
+  if os.path.exists(FLAGS.checkpoint_path) == False:
+    os.makedirs(FLAGS.checkpoint_path)
+  CHECKPOINT_FILE = FLAGS.checkpoint_path + "/checkpoint.ckpt"
+  LATEST_CHECKPOINT = tf.train.latest_checkpoint(FLAGS.checkpoint_path)
 
   # Initialize train and test data
   TRAIN_IMAGE_NUMBER = 646
@@ -288,10 +303,18 @@ def main():
   # Define accuracy and inference op
   tf.get_variable_scope().reuse_variables()
   logits = inference(x)
-  validate_softmax = tf.nn.softmax(logits)
-  predict_op = tf.argmax(validate_softmax, 1)
+  predict_softmax = tf.nn.softmax(logits)
+  predict_op = tf.argmax(predict_softmax, 1)
   correct_prediction = tf.equal(predict_op, tf.to_int64(y))
   accuracy_op = tf.reduce_mean(tf.cast(correct_prediction, tf.float32))
+
+  model_signature = signature_def_utils.build_signature_def(
+      inputs={"image": utils.build_tensor_info(x)},
+      outputs={
+          "softmax": utils.build_tensor_info(predict_softmax),
+          "prediction": utils.build_tensor_info(predict_op)
+      },
+      method_name=signature_constants.PREDICT_METHOD_NAME)
 
   saver = tf.train.Saver()
   tf.summary.scalar('loss', loss)
@@ -339,6 +362,7 @@ def main():
           start_time = end_time
 
       # Export the model
+      """
       print("Exporting trained model to {}".format(FLAGS.model_path))
       model_exporter = exporter.Exporter(saver)
       model_exporter.init(
@@ -358,6 +382,7 @@ def main():
       model_exporter.export(FLAGS.model_path,
                             tf.constant(FLAGS.export_version), sess)
       print 'Done exporting!'
+      """
 
     elif mode == "inference":
       ckpt = tf.train.get_checkpoint_state(checkpoint_dir)
@@ -377,19 +402,51 @@ def main():
 
       end_time = datetime.datetime.now()
       pokemon_type = pokemon_types[prediction[0]]
-      print("[{}] Predict type: {}".format(end_time - start_time,
-                                           pokemon_type))
+      print(
+          "[{}] Predict type: {}".format(end_time - start_time, pokemon_type))
 
-    else:
-      print("Unknow mode, please choose 'train' or 'inference'")
+    elif FLAGS.mode == "savedmodel":
+      if restore_from_checkpoint(sess, saver, LATEST_CHECKPOINT) == False:
+        logging.error("No checkpoint for exporting model, exit now")
+        exit(1)
 
-  print("End of Pokemon classifier")
+      export_path = os.path.join(
+          compat.as_bytes(FLAGS.model_path),
+          compat.as_bytes(str(FLAGS.model_version)))
+      logging.info("Export the model to {}".format(export_path))
+
+      try:
+        legacy_init_op = tf.group(
+            tf.tables_initializer(), name='legacy_init_op')
+        builder = saved_model_builder.SavedModelBuilder(export_path)
+        builder.add_meta_graph_and_variables(
+            sess, [tag_constants.SERVING],
+            clear_devices=True,
+            signature_def_map={
+                signature_constants.DEFAULT_SERVING_SIGNATURE_DEF_KEY:
+                model_signature,
+            },
+            legacy_init_op=legacy_init_op)
+
+        builder.save()
+      except Exception as e:
+        logging.error("Fail to export saved model, exception: {}".format(e))
 
 
 def print_image(image_ndarray):
   import matplotlib.pyplot as plt
   plt.imshow(image_ndarray)
   plt.show()
+
+
+def restore_from_checkpoint(sess, saver, checkpoint):
+  if checkpoint:
+    logging.info("Restore session from checkpoint: {}".format(checkpoint))
+    saver.restore(sess, checkpoint)
+    return True
+  else:
+    logging.warn("Checkpoint not found: {}".format(checkpoint))
+    return False
 
 
 if __name__ == "__main__":
