@@ -3,16 +3,19 @@
 import datetime
 import logging
 import os
-
 import numpy as np
 import tensorflow as tf
 from scipy import ndimage
-#from tensorflow.contrib.session_bundle import exporter
 from tensorflow.contrib import rnn
 from tensorflow.python.saved_model import builder as saved_model_builder
 from tensorflow.python.saved_model import (
     signature_constants, signature_def_utils, tag_constants, utils)
 from tensorflow.python.util import compat
+
+logging.basicConfig(
+    format='%(asctime)s %(levelname)-8s %(message)s',
+    level=logging.INFO,
+    datefmt='%Y-%m-%d %H:%M:%S')
 
 # Define parameters
 flags = tf.app.flags
@@ -37,8 +40,6 @@ flags.DEFINE_string(
     "model", "cnn",
     "Model to train, option model: cnn, lstm, bidirectional_lstm, stacked_lstm"
 )
-#flags.DEFINE_string("model_path", "./model", "The path to export the model")
-#flags.DEFINE_integer("export_version", 1, "Version number of the model")
 flags.DEFINE_string("model_path", "./model/", "Path of the model")
 flags.DEFINE_integer("model_version", 1, "Version of the model")
 
@@ -130,6 +131,11 @@ def main():
   # Define the model
   keys_placeholder = tf.placeholder(tf.int32, shape=[None, 1])
   keys = tf.identity(keys_placeholder)
+
+  model_base64_placeholder = tf.placeholder(
+      shape=[None], dtype=tf.string, name="model_input_b64_images")
+  model_base64_string = tf.decode_base64(model_base64_placeholder)
+  model_base64_input = tf.map_fn(lambda x: tf.image.resize_images(tf.image.decode_jpeg(x, channels=RGB_CHANNEL_SIZE), [IMAGE_SIZE, IMAGE_SIZE]), model_base64_string, dtype=tf.float32)
 
   x = tf.placeholder(
       tf.float32, shape=(None, IMAGE_SIZE, IMAGE_SIZE, RGB_CHANNEL_SIZE))
@@ -302,17 +308,21 @@ def main():
 
   # Define accuracy and inference op
   tf.get_variable_scope().reuse_variables()
-  logits = inference(x)
-  predict_softmax = tf.nn.softmax(logits)
-  predict_op = tf.argmax(predict_softmax, 1)
-  correct_prediction = tf.equal(predict_op, tf.to_int64(y))
-  accuracy_op = tf.reduce_mean(tf.cast(correct_prediction, tf.float32))
+
+  #logits = inference(x)
+  inference_logits = inference(model_base64_input)
+
+  inference_predict_softmax = tf.nn.softmax(inference_logits)
+  inference_predict_op = tf.argmax(inference_predict_softmax, 1)
+  inference_correct_prediction = tf.equal(inference_predict_op, tf.to_int64(y))
+  inference_accuracy_op = tf.reduce_mean(
+      tf.cast(inference_correct_prediction, tf.float32))
 
   model_signature = signature_def_utils.build_signature_def(
-      inputs={"image": utils.build_tensor_info(x)},
+      inputs={"images": utils.build_tensor_info(model_base64_placeholder)},
       outputs={
-          "softmax": utils.build_tensor_info(predict_softmax),
-          "prediction": utils.build_tensor_info(predict_op)
+          "softmax": utils.build_tensor_info(inference_predict_softmax),
+          "prediction": utils.build_tensor_info(inference_predict_op)
       },
       method_name=signature_constants.PREDICT_METHOD_NAME)
 
@@ -329,11 +339,11 @@ def main():
     if mode == "train":
       ckpt = tf.train.get_checkpoint_state(checkpoint_dir)
       if ckpt and ckpt.model_checkpoint_path:
-        print("Continue training from the model {}".format(
+        logging.info("Continue training from the model {}".format(
             ckpt.model_checkpoint_path))
         saver.restore(sess, ckpt.model_checkpoint_path)
 
-      start_time = datetime.datetime.now()
+      #start_time = datetime.datetime.now()
       for epoch in range(epoch_number):
 
         _, loss_value, step = sess.run(
@@ -343,7 +353,7 @@ def main():
 
         if epoch % steps_to_validate == 0:
           end_time = datetime.datetime.now()
-
+          """
           train_accuracy_value, summary_value = sess.run(
               [accuracy_op, summary_op],
               feed_dict={x: train_dataset,
@@ -352,18 +362,41 @@ def main():
               accuracy_op, feed_dict={x: test_dataset,
                                       y: test_labels})
 
-          print(
+          logging.info(
               "[{}] Epoch: {}, loss: {}, train_accuracy: {}, test_accuracy: {}".
               format(end_time - start_time, epoch, loss_value,
                      train_accuracy_value, test_accuracy_value))
+          """
+          logging.info("Epoch: {}, loss: {}".format(epoch, loss_value))
 
           saver.save(sess, checkpoint_file, global_step=step)
-          writer.add_summary(summary_value, step)
-          start_time = end_time
+          #writer.add_summary(summary_value, step)
+          #start_time = end_time
 
-      # Export the model
+        # Export the model
+      export_path = os.path.join(
+          compat.as_bytes(FLAGS.model_path),
+          compat.as_bytes(str(FLAGS.model_version)))
+      logging.info("Export the model to {}".format(export_path))
+
+      try:
+        legacy_init_op = tf.group(
+            tf.tables_initializer(), name='legacy_init_op')
+        builder = saved_model_builder.SavedModelBuilder(export_path)
+        builder.add_meta_graph_and_variables(
+            sess, [tag_constants.SERVING],
+            clear_devices=True,
+            signature_def_map={
+                signature_constants.DEFAULT_SERVING_SIGNATURE_DEF_KEY:
+                model_signature,
+            },
+            legacy_init_op=legacy_init_op)
+
+        builder.save()
+      except Exception as e:
+        logging.error("Fail to export saved model, exception: {}".format(e))
       """
-      print("Exporting trained model to {}".format(FLAGS.model_path))
+      logging.info("Exporting trained model to {}".format(FLAGS.model_path))
       model_exporter = exporter.Exporter(saver)
       model_exporter.init(
           sess.graph.as_graph_def(),
@@ -381,13 +414,13 @@ def main():
           })
       model_exporter.export(FLAGS.model_path,
                             tf.constant(FLAGS.export_version), sess)
-      print 'Done exporting!'
+      logging.info("Done export model: {}".format(FLAGS.model_path))
       """
 
     elif mode == "inference":
       ckpt = tf.train.get_checkpoint_state(checkpoint_dir)
       if ckpt and ckpt.model_checkpoint_path:
-        print("Load the model {}".format(ckpt.model_checkpoint_path))
+        logging.info("Load the model {}".format(ckpt.model_checkpoint_path))
         saver.restore(sess, ckpt.model_checkpoint_path)
 
       start_time = datetime.datetime.now()
@@ -402,7 +435,7 @@ def main():
 
       end_time = datetime.datetime.now()
       pokemon_type = pokemon_types[prediction[0]]
-      print(
+      logging.info(
           "[{}] Predict type: {}".format(end_time - start_time, pokemon_type))
 
     elif FLAGS.mode == "savedmodel":
