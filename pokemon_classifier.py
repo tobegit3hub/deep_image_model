@@ -237,8 +237,9 @@ def main():
     bw_lstm_cell = rnn.BasicLSTMCell(RNN_HIDDEN_UNITS, forget_bias=1.0)
 
     # outputs is array of 32 * [BATCH_SIZE, 128]
-    outputs, _, _ = rnn.bidirectional_rnn(
-        fw_lstm_cell, bw_lstm_cell, x, dtype=tf.float32)
+    #outputs, _, _ = rnn.bidirectional_rnn(
+    #    fw_lstm_cell, bw_lstm_cell, x, dtype=tf.float32)
+    outputs, _, _ = tf.nn.static_bidirectional_rnn(fw_lstm_cell, bw_lstm_cell, x, dtype=tf.float32)
 
     # outputs[-1] is [BATCH_SIZE, 128]
     return tf.matmul(outputs[-1], weights) + biases
