@@ -212,7 +212,8 @@ def main():
     # output size is 128, state size is (c=128, h=128)
     lstm_cell = rnn.BasicLSTMCell(RNN_HIDDEN_UNITS, forget_bias=1.0)
     # outputs is array of 32 * [BATCH_SIZE, 128]
-    outputs, states = rnn.rnn(lstm_cell, x, dtype=tf.float32)
+    #outputs, states = rnn.rnn(lstm_cell, x, dtype=tf.float32)
+    outputs, states = rnn.static_rnn(lstm_cell, x, dtype=tf.float32)
 
     # outputs[-1] is [BATCH_SIZE, 128]
     return tf.matmul(outputs[-1], weights) + biases
